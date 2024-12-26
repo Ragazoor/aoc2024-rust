@@ -1,4 +1,4 @@
-use std::collections::HashSet;
+use std::{collections::HashSet, hash::Hash};
 
 advent_of_code::solution!(6);
 
@@ -103,28 +103,52 @@ pub fn part_two(input: &str) -> Option<u64> {
             _ => None,
         })
     });
-    let guard = match guard_opt {
+    let mut guard = match guard_opt {
         Some(guard) => guard,
         None => panic!("No guard found"),
     };
     println!("Guard: {:?}", guard);
 
     let orig_pos = guard.pos;
-    let mut set = simulate_walk_2(&grid, guard);
-    set.remove(&orig_pos);
+
+    let mut obstacle_set: HashSet<(i64, i64)> = HashSet::new();
+    let mut visited_states = HashSet::new();
+    loop {
+        grid[guard.pos.1 as usize][guard.pos.0 as usize] = Tile::Walked2(guard.dir);
+        visited_states.insert((guard.pos.0 as u64, guard.pos.1 as u64, guard.dir));
+        match get_obstacle_loop_pos(&grid, &guard, &visited_states) {
+            Some(obstacle_pos) => {
+                obstacle_set.insert(obstacle_pos);
+            }
+            None => {}
+        }
+        match get_next_guard(&guard, &grid) {
+            Some(new_guard) => {
+                grid[new_guard.pos.1 as usize][new_guard.pos.0 as usize] =
+                    Tile::GuardTile(new_guard.dir);
+                guard = new_guard;
+            }
+
+            None => {
+                println!("Guard is outside the grid {:?}", guard);
+                break;
+            }
+        }
+    }
+    obstacle_set.remove(&orig_pos);
 
     println!("Walked grid:");
-    for pos in set.iter() {
+    for pos in obstacle_set.iter() {
         grid[pos.1 as usize][pos.0 as usize] = Tile::Obstacle2;
     }
     print_grid(&grid);
 
-    Some(set.iter().len() as u64)
+    Some(obstacle_set.iter().len() as u64)
 }
 
 fn simulate_walk(grid: Vec<Vec<Tile>>, guard: Guard) -> Vec<Vec<Tile>> {
     let mut new_grid = grid.clone();
-    let new_guard_opt = get_new_guard(guard, &new_grid);
+    let new_guard_opt = get_next_guard(&guard, &new_grid);
     new_grid[guard.pos.1 as usize][guard.pos.0 as usize] = Tile::Walked;
     match new_guard_opt {
         Some(new_guard) => {
@@ -140,61 +164,65 @@ fn simulate_walk(grid: Vec<Vec<Tile>>, guard: Guard) -> Vec<Vec<Tile>> {
     }
 }
 
-fn simulate_walk_2(grid: &Vec<Vec<Tile>>, guard: Guard) -> HashSet<(i64, i64)> {
-    let mut new_grid = grid.clone();
-    let pos_set = match can_create_loop(&new_grid, guard) {
-        Some(obstacle_pos) => {
-            let mut pos_set = HashSet::new();
-            pos_set.insert(obstacle_pos);
-            pos_set
-        }
-        None => HashSet::new(),
-    };
+fn simulate_walk_2(
+    mut grid: Vec<Vec<Tile>>,
+    mut visited_states: HashSet<(u64, u64, Direction)>,
+    mut guard: Guard,
+) -> bool {
+    let mut has_loop = false;
+    loop {
+        grid[guard.pos.1 as usize][guard.pos.0 as usize] = Tile::Walked2(guard.dir);
+        match get_next_guard(&guard, &grid) {
+            Some(new_guard) => {
+                grid[new_guard.pos.1 as usize][new_guard.pos.0 as usize] =
+                    Tile::GuardTile(new_guard.dir);
 
-    new_grid[guard.pos.1 as usize][guard.pos.0 as usize] = Tile::Walked2(guard.dir);
-    match get_new_guard(guard, &new_grid) {
-        Some(new_guard) => {
-            new_grid[new_guard.pos.1 as usize][new_guard.pos.0 as usize] =
-                Tile::GuardTile(new_guard.dir);
-
-            pos_set
-                .union(&simulate_walk_2(&new_grid, new_guard))
-                .cloned()
-                .collect()
-        }
-        None => {
-            print!("Guard is outside the grid {:?}", guard);
-            pos_set
+                if visited_states.contains(&(
+                    new_guard.pos.0 as u64,
+                    new_guard.pos.1 as u64,
+                    new_guard.dir,
+                )) {
+                    has_loop = true;
+                    break;
+                } else {
+                    visited_states.insert((
+                        new_guard.pos.0 as u64,
+                        new_guard.pos.1 as u64,
+                        new_guard.dir,
+                    ));
+                }
+                guard = new_guard;
+            }
+            None => {
+                //print!("Guard is outside the grid {:?}", guard);
+                break;
+            }
         }
     }
+    return has_loop;
 }
 
-fn can_create_loop(grid: &Vec<Vec<Tile>>, guard: Guard) -> Option<(i64, i64)> {
-    let right_turn_dir = match guard.dir {
-        Direction::Up => Direction::Right,
-        Direction::Down => Direction::Left,
-        Direction::Left => Direction::Up,
-        Direction::Right => Direction::Down,
-    };
+fn get_obstacle_loop_pos(
+    grid: &Vec<Vec<Tile>>,
+    guard: &Guard,
+    visited_states: &HashSet<(u64, u64, Direction)>,
+) -> Option<(i64, i64)> {
+    let right_turn_dir = turn_right_dir(&guard.dir);
     let new_guard = Guard {
         pos: guard.pos,
         dir: right_turn_dir,
         dir_diff: get_dir_diff(&right_turn_dir),
     };
-    let print = false;
     let mut new_grid = grid.clone();
-    let guard_diff = match guard.dir {
-        Direction::Up => (0, -1),
-        Direction::Down => (0, 1),
-        Direction::Left => (-1, 0),
-        Direction::Right => (1, 0),
-    };
 
-    let obstacle_pos = (guard.pos.0 + guard_diff.0, guard.pos.1 + guard_diff.1);
+    let obstacle_pos = (
+        guard.pos.0 + guard.dir_diff.0,
+        guard.pos.1 + guard.dir_diff.1,
+    );
     let grid_size = (grid[0].len() as u64, grid.len() as u64);
-    if is_inside_grid(obstacle_pos, grid_size) && can_create_obstacle(grid, obstacle_pos) {
+    if is_inside_grid(obstacle_pos, grid_size) && can_create_obstacle(&grid, obstacle_pos) {
         new_grid[obstacle_pos.1 as usize][obstacle_pos.0 as usize] = Tile::Obstacle2;
-        if simulate_walk_3(new_grid, new_guard, print, HashSet::new()) {
+        if simulate_walk_2(new_grid, visited_states.clone(), new_guard) {
             Some(obstacle_pos)
         } else {
             None
@@ -212,35 +240,6 @@ fn can_create_obstacle(grid: &Vec<Vec<Tile>>, new_pos: (i64, i64)) -> bool {
     }
 }
 
-fn simulate_walk_3(
-    mut grid: Vec<Vec<Tile>>,
-    guard: Guard,
-    print: bool,
-    mut visited_states: HashSet<(u64, u64, Direction)>,
-) -> bool {
-    grid[guard.pos.1 as usize][guard.pos.0 as usize] = Tile::Walked2(guard.dir);
-    visited_states.insert((guard.pos.0 as u64, guard.pos.1 as u64, guard.dir));
-    match get_new_guard(guard, &grid) {
-        Some(new_guard) => {
-            if visited_states.contains(&(
-                new_guard.pos.0 as u64,
-                new_guard.pos.1 as u64,
-                new_guard.dir,
-            )) {
-                if print {
-                    println!("--------------------------------");
-                    print_grid(&grid);
-                    println!("--------------------------------");
-                }
-                return true;
-            } else {
-                return simulate_walk_3(grid, new_guard, print, visited_states);
-            }
-        }
-        None => false,
-    }
-}
-
 fn turn_right_dir(dir: &Direction) -> Direction {
     match dir {
         Direction::Up => Direction::Right,
@@ -250,7 +249,7 @@ fn turn_right_dir(dir: &Direction) -> Direction {
     }
 }
 
-fn get_new_guard(guard: Guard, grid: &Vec<Vec<Tile>>) -> Option<Guard> {
+fn get_next_guard(guard: &Guard, grid: &Vec<Vec<Tile>>) -> Option<Guard> {
     let grid_size = (grid[0].len() as u64, grid.len() as u64);
     let new_guard_pos = (
         guard.pos.0 + guard.dir_diff.0,
@@ -267,26 +266,22 @@ fn get_new_guard(guard: Guard, grid: &Vec<Vec<Tile>>) -> Option<Guard> {
                 Some(new_guard)
             }
             Tile::Obstacle | Tile::Obstacle2 => {
-                let new_dir = match guard.dir {
-                    Direction::Up => Direction::Right,
-                    Direction::Right => Direction::Down,
-                    Direction::Down => Direction::Left,
-                    Direction::Left => Direction::Up,
-                };
+                let new_dir = turn_right_dir(&guard.dir);
                 let new_guard = Guard {
                     pos: guard.pos,
                     dir: new_dir,
                     dir_diff: get_dir_diff(&new_dir),
                 };
-                get_new_guard(new_guard, grid)
+                Some(new_guard)
             }
-            _ => {
+            tile => {
                 print_grid(grid);
-                panic!("Invalid tile");
+                panic!("Invalid tile {:?} on position {:?}", tile, new_guard_pos);
             }
         }
     } else {
         // Guard is outside the grid
+        //println!("New guard position is outside the grid {:?}", new_guard_pos);
         None
     }
 }
@@ -380,6 +375,18 @@ mod tests {
                             ^...\n\
                             #...\n\
                             .#..\n";
+        let result = part_two(input);
+        assert_eq!(result, Some(1));
+    }
+
+    #[test]
+    fn test_part_two_5() {
+        let input = ".#..\n\
+                            ....\n\
+                            ....\n\
+                            #^..\n\
+                            .#..\n\
+                            ....\n";
         let result = part_two(input);
         assert_eq!(result, Some(1));
     }
