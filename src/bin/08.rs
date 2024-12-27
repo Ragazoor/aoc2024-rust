@@ -1,6 +1,7 @@
 use std::collections::{HashMap, HashSet};
 
-use itertools::Itertools;
+use itertools::{iterate, Itertools};
+use num::Integer;
 
 advent_of_code::solution!(8);
 
@@ -8,24 +9,6 @@ advent_of_code::solution!(8);
 enum Tile {
     Empty,
     Antenna(char),
-}
-
-fn _parse_input(input: &str) -> HashMap<(i64, i64), Tile> {
-    input
-        .lines()
-        .enumerate()
-        .flat_map(|(y, line)| {
-            line.chars().enumerate().map(move |(x, c)| {
-                (
-                    (x as i64, y as i64),
-                    match c {
-                        '.' => Tile::Empty,
-                        c => Tile::Antenna(c),
-                    },
-                )
-            })
-        })
-        .collect()
 }
 
 fn get_grid_size(input: &str) -> (usize, usize) {
@@ -71,8 +54,6 @@ pub fn part_one(input: &str) -> Option<u64> {
         .filter(|pos| is_inside_grid(pos, &grid_size))
         .count();
 
-    println!("Result: {}", result);
-
     Some(result as u64)
 }
 
@@ -103,11 +84,84 @@ fn get_antenna_pair_antinodes(a: &(i64, i64), b: &(i64, i64)) -> HashSet<(i64, i
     antinodes
 }
 
+fn get_antenna_vec(a: &(i64, i64), b: &(i64, i64)) -> (i64, i64) {
+    let (dx, dy) = get_antenna_dist(a, b);
+    get_unit_vector(dx, dy)
+}
+fn get_unit_vector(dx: i64, dy: i64) -> (i64, i64) {
+    let gcd = dx.gcd(&dy);
+    (dx / gcd, dy / gcd)
+}
+
+fn get_all_antenna_antinodes_two(
+    antennas: &Vec<(i64, i64)>,
+    grid_size: &(usize, usize),
+) -> HashSet<(i64, i64)> {
+    antennas
+        .iter()
+        .combinations(2)
+        .flat_map(|antenna_pairs| {
+            let a = antenna_pairs[0];
+            let b = antenna_pairs[1];
+            let nodes = get_antenna_pair_antinodes_two(&a, &b, grid_size);
+            nodes
+        })
+        .collect()
+}
+
+fn get_antenna_pair_antinodes_two(
+    a: &(i64, i64),
+    b: &(i64, i64),
+    grid_size: &(usize, usize),
+) -> HashSet<(i64, i64)> {
+    let (dx, dy) = get_antenna_vec(a, b);
+    let a_antinodes = iterate(0, |n| n + 1)
+        .map(|n| (a.0 + n * dx, a.1 + n * dy))
+        .take_while(|pos| is_inside_grid(pos, grid_size))
+        .collect::<HashSet<(i64, i64)>>();
+    let b_antinodes = iterate(0, |n| n + 1)
+        .map(|n| (b.0 - n * dx, b.1 - n * dy))
+        .take_while(|pos| is_inside_grid(pos, grid_size))
+        .collect::<HashSet<(i64, i64)>>();
+    println!(
+        "antinodes: {:?}",
+        a_antinodes.union(&b_antinodes).cloned().collect::<Vec<_>>()
+    );
+    a_antinodes.union(&b_antinodes).cloned().collect()
+}
+
 fn get_antenna_dist(a: &(i64, i64), b: &(i64, i64)) -> (i64, i64) {
     (a.0 - b.0, a.1 - b.1)
 }
-pub fn part_two(_input: &str) -> Option<u64> {
-    None
+
+pub fn part_two(input: &str) -> Option<u64> {
+    let grid_size = get_grid_size(input);
+    let tile_map = get_tile_map(input);
+
+    let result = tile_map
+        .values()
+        .map(|antenna_coords| get_all_antenna_antinodes_two(antenna_coords, &grid_size))
+        .fold(HashSet::new(), |acc, antinodes| {
+            acc.union(&antinodes).cloned().collect()
+        });
+
+    print_grid(input, &result);
+    Some(result.iter().count() as u64)
+}
+
+fn print_grid(input: &str, result: &HashSet<(i64, i64)>) {
+    let grid_size = get_grid_size(input);
+    for y in 0..grid_size.1 {
+        for x in 0..grid_size.0 {
+            let pos = (x as i64, y as i64);
+            if result.contains(&pos) {
+                print!("#");
+            } else {
+                print!(".");
+            }
+        }
+        println!();
+    }
 }
 
 #[cfg(test)]
@@ -139,6 +193,6 @@ mod tests {
     #[test]
     fn test_part_two() {
         let result = part_two(&advent_of_code::template::read_file("examples", DAY));
-        assert_eq!(result, None);
+        assert_eq!(result, Some(34));
     }
 }
