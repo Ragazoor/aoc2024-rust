@@ -81,7 +81,7 @@ fn get_next_j(bytes: &Vec<Byte>, mut j: usize) -> usize {
 
 pub fn part_two(input: &str) -> Option<u64> {
     let bytes = parse_input(input);
-    let result: usize = get_defragmented_bytes(&bytes)
+    let result: usize = get_defragmented_bytes_2(&bytes)
         .iter()
         .enumerate()
         .map(|(i, byte)| match byte {
@@ -92,40 +92,38 @@ pub fn part_two(input: &str) -> Option<u64> {
     Some(result as u64)
 }
 
-fn get_defragmented_bytes(init_bytes: &Vec<Byte>) -> Vec<Byte> {
+fn get_defragmented_bytes_2(init_bytes: &Vec<Byte>) -> Vec<Byte> {
     let mut bytes = init_bytes.clone();
-    let mut made_change = true;
-    while made_change {
-        let mut i = 0;
-        let mut j = bytes.len() - 1;
-        made_change = false;
+    let mut j = bytes.len() - 1;
 
-        while i <= j {
-            println!("i: {}, j: {}", i, j);
-            println!("{:?}", bytes);
-            let i_byte = &bytes[i];
-            match i_byte {
-                Byte::File(_) => {
-                    i += 1;
-                }
-                Byte::Empty => {
-                    let num_empty_space = get_empty_space_length(&bytes, &i);
-                    println!("num_empty_space: {}", num_empty_space);
-                    let start_idx_file_block =
-                        get_start_idx_file_block(&bytes, &num_empty_space, &j);
-                    println!("start_idx_file_block: {}", start_idx_file_block);
-                    if start_idx_file_block <= i {
-                        break;
-                    } else {
-                        move_file_block(&mut bytes, i, start_idx_file_block);
-                        made_change = true;
+    while j > 0 {
+        //println!("j: {}", j);
+        //println!("{:?}", bytes);
+        let j_byte = &bytes[j];
+        match j_byte {
+            Byte::File(_) => {
+                let start_idx_file_block = get_start_idx_file_block_2(&bytes, &j);
+                //println!("start_idx_file_block: {}", start_idx_file_block);
+                let file_block_length = j - &start_idx_file_block + 1;
+                //println!("file_block_length: {}", file_block_length);
+                let empty_start_idx = get_ok_empty_space_start_idx(&bytes, &file_block_length);
+                //println!("empty_start_idx: {:?}", empty_start_idx);
+                match empty_start_idx {
+                    Some(empty_start_idx) if empty_start_idx < start_idx_file_block => {
+                        move_file_block(&mut bytes, empty_start_idx, start_idx_file_block);
+                        j = start_idx_file_block;
                     }
-                    i += num_empty_space;
-                    j = start_idx_file_block - 1;
+                    _ => {
+                        j = start_idx_file_block - 1;
+                    }
                 }
+            }
+            Byte::Empty => {
+                j -= 1;
             }
         }
     }
+    //println!("{:?}", bytes);
     bytes
 }
 
@@ -168,75 +166,37 @@ fn get_empty_space_length(bytes: &Vec<Byte>, i: &usize) -> usize {
     j - i
 }
 
-fn get_start_idx_file_block(bytes: &Vec<Byte>, max_len: &usize, idx: &usize) -> usize {
-    let mut j = *idx;
-    let mut j_byte = bytes[j];
-    let mut current_file_id_opt: Option<usize> = None;
-    let mut last_file_block_idxopt: Option<usize> = None;
-    match j_byte {
-        Byte::File(id) => {
-            current_file_id_opt = Some(id);
-            last_file_block_idxopt = Some(j);
-        }
-        Byte::Empty => {}
-    }
-    while j > 0 {
-        println!("j: {}", j);
-        println!("{:?}", j_byte);
-        println!("{:?}", current_file_id_opt);
-        println!("{:?}", last_file_block_idxopt);
-        match j_byte {
-            Byte::File(id) => {
-                if Some(id) == current_file_id_opt {
-                    j -= 1;
+fn get_ok_empty_space_start_idx(bytes: &Vec<Byte>, min_length: &usize) -> Option<usize> {
+    let mut i = 0;
+    let len = bytes.len();
+    while i < (len - 1) {
+        let i_byte = bytes[i];
+        match i_byte {
+            Byte::Empty => {
+                let empty_space_len = get_empty_space_length(bytes, &i);
+                if empty_space_len >= *min_length {
+                    return Some(i);
                 } else {
-                    match current_file_id_opt {
-                        None => {
-                            println!("Setting Current File Id");
-                            println!("Setting Last File Block Id");
-                            current_file_id_opt = Some(id);
-                            last_file_block_idxopt = Some(j);
-                            j -= 1;
-                        }
-                        Some(_) => {
-                            let last_idx = last_file_block_idxopt.unwrap();
-                            let file_block_length = last_idx - j;
-                            println!("File Block Length: {}", file_block_length);
-                            if file_block_length <= *max_len {
-                                j += 1;
-                                break;
-                            } else {
-                                current_file_id_opt = Some(id);
-                                last_file_block_idxopt = Some(j);
-                                j -= 1;
-                            }
-                        }
-                    }
+                    i += empty_space_len;
                 }
             }
-            Byte::Empty => match current_file_id_opt {
-                None => {
-                    j -= 1;
-                }
-                Some(_) => {
-                    let last_idx = last_file_block_idxopt.unwrap();
-                    let file_block_length = last_idx - j;
-                    println!("File Block Length: {}", file_block_length);
-                    println!("Max Length: {}", *max_len);
-                    if file_block_length <= *max_len {
-                        j += 1;
-                        break;
-                    } else {
-                        current_file_id_opt = None;
-                        last_file_block_idxopt = None;
-                        j -= 1;
-                    }
-                }
-            },
+            Byte::File(_) => {
+                i += 1;
+            }
         }
-        j_byte = bytes[j]
     }
-    j
+    None
+}
+
+fn get_start_idx_file_block_2(bytes: &Vec<Byte>, i: &usize) -> usize {
+    let mut j = *i;
+    let mut current_byte = bytes[j];
+    let init_byte = bytes[j];
+    while current_byte == init_byte && j > 0 {
+        j -= 1;
+        current_byte = bytes[j];
+    }
+    j + 1
 }
 
 #[cfg(test)]
@@ -263,7 +223,7 @@ mod tests {
     fn test_two_part_two() {
         // parse to "0..111.22.333"
         let result = part_two("1231213");
-        assert_eq!(result, Some(81));
+        assert_eq!(result, Some(117));
     }
 
     #[test]
