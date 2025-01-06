@@ -90,7 +90,40 @@ fn print_tile_map_with_pos(tile_map: &HashMap<(i32, i32), Tile>, pos: (i32, i32)
 }
 
 pub fn part_two(input: &str) -> Option<u64> {
-    None
+    let tile_map = parse_input(input);
+    let result = tile_map
+        .iter()
+        .map(|(pos, tile)| {
+            if tile.height == 0 {
+                get_num_paths(&tile_map, *pos)
+            } else {
+                0
+            }
+        })
+        .sum::<u64>();
+
+    Some(result)
+}
+
+fn get_num_paths(tile_map: &HashMap<(i32, i32), Tile>, pos: (i32, i32)) -> u64 {
+    let current_tile = tile_map.get(&pos).unwrap();
+    let dirs = [(0, 1), (1, 0), (0, -1), (-1, 0)];
+    dirs.iter()
+        .map(|(dx, dy)| {
+            let new_pos = (pos.0 + dx, pos.1 + dy);
+            if let Some(tile) = tile_map.get(&new_pos) {
+                if tile.height == current_tile.height + 1 && tile.height < 9 {
+                    get_num_paths(tile_map, new_pos)
+                } else if tile.height == current_tile.height + 1 && tile.height == 9 {
+                    1
+                } else {
+                    0
+                }
+            } else {
+                0
+            }
+        })
+        .sum()
 }
 
 #[cfg(test)]
@@ -131,6 +164,6 @@ mod tests {
     #[test]
     fn test_part_two() {
         let result = part_two(&advent_of_code::template::read_file("examples", DAY));
-        assert_eq!(result, None);
+        assert_eq!(result, Some(81));
     }
 }
